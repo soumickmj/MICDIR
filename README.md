@@ -1,4 +1,4 @@
-# MICDIR
+# MICDIR: Multi-scale Inverse-consistent Deformable Image Registration, using MSCGUNet: Multi-scale UNet with Self-Constructing Graph Latent
 MICDIR
 Official code of the paper "MICDIR: Multi-scale Inverse-consistent Deformable Image Registration using UNetMSS with Self-Constructing Graph Latent" (https://arxiv.org/abs/2203.04317).
 
