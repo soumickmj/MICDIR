@@ -64,7 +64,7 @@ def normalized_cross_correlation(x, y, return_map, reduction='mean', eps=1e-8):
     elif reduction == 'sum':
         ncc = torch.sum(ncc)
     else:
-        raise KeyError('unsupported reduction type: %s' % reduction)
+        raise KeyError(f'unsupported reduction type: {reduction}')
 
     if not return_map:
         return ncc
@@ -82,8 +82,7 @@ def mae_loss(input, target):
     y_true_f = input.view(-1)
     y_pred_f = target.view(-1)
     diff = torch.abs(y_true_f-y_pred_f)
-    mae = diff.mean() 
-    return mae
+    return diff.mean()
 
 
 class NormalizedCrossCorrelation(nn.Module):
@@ -162,9 +161,7 @@ class MutualInformation(nn.Module):
     def jointPdf(self, kernel_values1, kernel_values2):
         joint_kernel_values = torch.matmul(kernel_values1.transpose(1, 2), kernel_values2)
         normalization = torch.sum(joint_kernel_values, dim=(1, 2)).view(-1, 1, 1) + self.epsilon
-        pdf = joint_kernel_values / normalization
-
-        return pdf
+        return joint_kernel_values / normalization
 
     def getMutualInformation(self, input1, input2):
         '''
@@ -246,11 +243,14 @@ class NMI_torch:
         x_r = -x % patch_size
         y_r = -y % patch_size
         z_r = -z % patch_size
-        pad_dims = [[0,0]]
-        pad_dims.append([x_r//2, x_r - x_r//2])
-        pad_dims.append([y_r//2, y_r - y_r//2])
-        pad_dims.append([z_r//2, z_r - z_r//2])
-        pad_dims.append([0,0])
+        pad_dims = [
+            [0, 0],
+            [x_r // 2, x_r - x_r // 2],
+            [y_r // 2, y_r - y_r // 2],
+            [z_r // 2, z_r - z_r // 2],
+            [0, 0],
+        ]
+
         padding = torch.tensor(pad_dims)
 
         # compute image terms
@@ -301,7 +301,7 @@ class NMI_torch:
             y_pred = torch.reshape(y_pred, (-1, torch.prod(torch.tensor([*(y_pred.shape)])[1:])))
             y_pred = torch.unsqueeze(y_pred, 2)
 
-        
+
         #nb_voxels = self.y_pred_shape1[1]
         nb_voxels = torch.tensor(y_pred.shape[1])
 
@@ -370,11 +370,14 @@ class NMI_keras:
         x_r = -x % patch_size
         y_r = -y % patch_size
         z_r = -z % patch_size
-        pad_dims = [[0,0]]
-        pad_dims.append([x_r//2, x_r - x_r//2])
-        pad_dims.append([y_r//2, y_r - y_r//2])
-        pad_dims.append([z_r//2, z_r - z_r//2])
-        pad_dims.append([0,0])
+        pad_dims = [
+            [0, 0],
+            [x_r // 2, x_r - x_r // 2],
+            [y_r // 2, y_r - y_r // 2],
+            [z_r // 2, z_r - z_r // 2],
+            [0, 0],
+        ]
+
         padding = tf.constant(pad_dims)
 
         # compute image terms

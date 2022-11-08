@@ -16,8 +16,7 @@ def imgnorm(N_I,index1=0.0001,index2=0.0001):
     N_I =1.0*(N_I-I_min)/(I_max-I_min)
     N_I[N_I>1.0]=1.0
     N_I[N_I<0.0]=0.0
-    N_I2 = N_I.astype(np.float32)
-    return N_I2
+    return N_I.astype(np.float32)
 
 
 class Dataset(Data.Dataset):
@@ -40,10 +39,9 @@ class Dataset(Data.Dataset):
         img_A = load_4D(self.t1_filenames[idx])
         img_B = load_4D(self.t2_filenames[idx])
 
-        if self.norm:
-            full_img_A = imgnorm(img_A)
-            full_img_B = imgnorm(img_B)
-            return full_img_A, full_img_B
-        else:
+        if not self.norm:
             return img_A, img_B
+        full_img_A = imgnorm(img_A)
+        full_img_B = imgnorm(img_B)
+        return full_img_A, full_img_B
 

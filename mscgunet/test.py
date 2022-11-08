@@ -162,7 +162,7 @@ if __name__ == "__main__":
     # vector integrion to enforce diffeomorphic transform
     dim = 3
     int_downsize = 2
-    down_shape = [int(dim / int_downsize) for dim in (128, 128, 128)]
+    down_shape = [dim // int_downsize for dim in (128, 128, 128)]
     resize = ResizeTransform(2, 3).to("cuda")
     fullsize = ResizeTransform(0.5, 3).to("cuda")
     integrate = VecInt(down_shape, 7).to("cuda")
@@ -198,8 +198,8 @@ if __name__ == "__main__":
 
     if not os.path.isdir(model_dir):
         os.mkdir(model_dir)
-        
+
     start_time = time.time()
     fullmodel_one_epoch_run()
     end_time = time.time()
-    print("Total time taken: {} minutes".format((end_time - start_time) / 60.0))
+    print(f"Total time taken: {(end_time - start_time) / 60.0} minutes")

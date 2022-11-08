@@ -75,8 +75,7 @@ def imgnorm(N_I,index1=0.0001,index2=0.0001):
     N_I =1.0*(N_I-I_min)/(I_max-I_min)
     N_I[N_I>1.0]=1.0
     N_I[N_I<0.0]=0.0
-    N_I2 = N_I.astype(np.float32)
-    return N_I2
+    return N_I.astype(np.float32)
 
 def Norm_Zscore(img):
     img= (img-np.mean(img))/np.std(img) 
@@ -95,15 +94,11 @@ class Dataset(Data.Dataset):
         return len(self.t1_filenames) * self.iterations
 
   def __getitem__(self, idx):
-        'Generates one sample of data'
-        img_A = load_4D(self.t1_filenames[idx])
-        img_B = load_4D(self.t2_filenames[idx])     
-        
-        if self.norm:
-            #return  Norm_Zscore(imgnorm(img_A)) , Norm_Zscore(imgnorm(img_B))
-            return  imgnorm(img_A) , imgnorm(img_B)
-        else:
-            return img_A, img_B
+      'Generates one sample of data'
+      img_A = load_4D(self.t1_filenames[idx])
+      img_B = load_4D(self.t2_filenames[idx])     
+
+      return (imgnorm(img_A), imgnorm(img_B)) if self.norm else (img_A, img_B)
 
 training_generator = Data.DataLoader(Dataset(file_names_t1, file_names_t2,norm=True), batch_size=4, shuffle=False)
 
@@ -111,18 +106,27 @@ validation_generator = Data.DataLoader(Dataset(file_names_t1, file_names_t2,norm
 
 counter = 0
 for fp in file_names_t1:
-  myimg = load_4D(fp)
-  myimg_norm = imgnorm(myimg)
-  myimg_znorm = Norm_Zscore(myimg_norm)
-  print(fp)
-  print("Max values of natural image, normalized and z-normalized are: {}, {} and {}".format(np.max(myimg), np.max(myimg_norm), np.max(myimg_znorm) ))
-  print("Min values of natural image, normalized and z-normalized are: {}, {} and {}".format(np.min(myimg), np.min(myimg_norm), np.min(myimg_znorm) ))
-  print("Mean values of natural image, normalized and z-normalized are: {}, {} and {}".format(np.mean(myimg), np.mean(myimg_norm), np.mean(myimg_znorm) ))
-  print("========= ========== ======")
-  print()
-  counter = counter + 1
-  if (counter > 2):
-    break;
+    myimg = load_4D(fp)
+    myimg_norm = imgnorm(myimg)
+    myimg_znorm = Norm_Zscore(myimg_norm)
+    print(fp)
+    print(
+        f"Max values of natural image, normalized and z-normalized are: {np.max(myimg)}, {np.max(myimg_norm)} and {np.max(myimg_znorm)}"
+    )
+
+    print(
+        f"Min values of natural image, normalized and z-normalized are: {np.min(myimg)}, {np.min(myimg_norm)} and {np.min(myimg_znorm)}"
+    )
+
+    print(
+        f"Mean values of natural image, normalized and z-normalized are: {np.mean(myimg)}, {np.mean(myimg_norm)} and {np.mean(myimg_znorm)}"
+    )
+
+    print("========= ========== ======")
+    print()
+    counter = counter + 1
+    if (counter > 2):
+      break;
 
 
 #print(np.max(myimg))
@@ -155,43 +159,41 @@ class SpatialTransformer(nn.Module):
         # than they need to be. so far, there does not appear to be an elegant solution.
         # see: https://discuss.pytorch.org/t/how-to-register-buffer-without-polluting-state-dict
 
-        if (self.isaffine):
-          grid = F.affine_grid(self.theta, self.affine_image_size, align_corners=False)
-          #grid = grid.permute(0, 4, 1, 2, 3)
-          self.register_buffer('grid', grid)
+        if self.isaffine:
+            grid = F.affine_grid(self.theta, self.affine_image_size, align_corners=False)
         else:
-          vectors = [torch.arange(0, s) for s in size]
-          grids = torch.meshgrid(vectors)
-          grid = torch.stack(grids)
-          grid = torch.unsqueeze(grid, 0)
-          grid = grid.type(torch.FloatTensor)
-          self.register_buffer('grid', grid)
+            vectors = [torch.arange(0, s) for s in size]
+            grids = torch.meshgrid(vectors)
+            grid = torch.stack(grids)
+            grid = torch.unsqueeze(grid, 0)
+            grid = grid.type(torch.FloatTensor)
+
+        #grid = grid.permute(0, 4, 1, 2, 3)
+        self.register_buffer('grid', grid)
 
     def forward(self, src, flow=None):      
-      if (self.isaffine):
-        grid = F.affine_grid(self.theta, self.affine_image_size)        
-        warped_image = F.grid_sample(src, grid)
-        #warped_image = warped_image.permute(0, 4, 1, 2, 3)
-        return warped_image
-      else:
-        # new locations
-        new_locs = self.grid + flow
-        shape = flow.shape[2:]
+        if self.isaffine:
+            grid = F.affine_grid(self.theta, self.affine_image_size)
+            return F.grid_sample(src, grid)
+        else:
+            # new locations
+            new_locs = self.grid + flow
+            shape = flow.shape[2:]
 
-        # need to normalize grid values to [-1, 1] for resampler
-        for i in range(len(shape)):
-            new_locs[:, i, ...] = 2 * (new_locs[:, i, ...] / (shape[i] - 1) - 0.5)
+            # need to normalize grid values to [-1, 1] for resampler
+            for i in range(len(shape)):
+                new_locs[:, i, ...] = 2 * (new_locs[:, i, ...] / (shape[i] - 1) - 0.5)
 
-        # move channels dim to last position
-        # also not sure why, but the channels need to be reversed
-        if len(shape) == 2:
-            new_locs = new_locs.permute(0, 2, 3, 1)
-            new_locs = new_locs[..., [1, 0]]
-        elif len(shape) == 3:
-            new_locs = new_locs.permute(0, 2, 3, 4, 1)
-            new_locs = new_locs[..., [2, 1, 0]]
+            # move channels dim to last position
+            # also not sure why, but the channels need to be reversed
+            if len(shape) == 2:
+                new_locs = new_locs.permute(0, 2, 3, 1)
+                new_locs = new_locs[..., [1, 0]]
+            elif len(shape) == 3:
+                new_locs = new_locs.permute(0, 2, 3, 4, 1)
+                new_locs = new_locs[..., [2, 1, 0]]
 
-        return F.grid_sample(src, new_locs, align_corners=True, mode=self.mode)
+            return F.grid_sample(src, new_locs, align_corners=True, mode=self.mode)
 
 """# Deformable ConvNet"""
 
@@ -226,67 +228,77 @@ class Admir_Deformable_UNet(nn.Module):
 
   def encoder(self, in_channels, out_channels, kernel_size=3, stride=1, padding=1,
                 bias=True):
-    layer = nn.Sequential(
-                nn.Conv3d(in_channels, out_channels, kernel_size, stride=stride, padding=padding, bias=bias),
-                nn.BatchNorm3d(out_channels),
-                nn.LeakyReLU())
-    return layer
+      return nn.Sequential(
+          nn.Conv3d(
+              in_channels,
+              out_channels,
+              kernel_size,
+              stride=stride,
+              padding=padding,
+              bias=bias,
+          ),
+          nn.BatchNorm3d(out_channels),
+          nn.LeakyReLU(),
+      )
 
   def decoder(self, in_channels, out_channels, kernel_size=2, stride=2, padding=0,
                 output_padding=0, bias=True):
-    layer = nn.Sequential(
-                nn.ConvTranspose3d(in_channels, out_channels, kernel_size, stride=stride,
-                               padding=padding, output_padding=output_padding, bias=bias),
-                                nn.LeakyReLU())
-    return layer
+      return nn.Sequential(
+          nn.ConvTranspose3d(
+              in_channels,
+              out_channels,
+              kernel_size,
+              stride=stride,
+              padding=padding,
+              output_padding=output_padding,
+              bias=bias,
+          ),
+          nn.LeakyReLU(),
+      )
        
   def output(self, in_channels, out_channels, kernel_size=3, 
                 bias=False, batchnorm=False):
-    layer = nn.Sequential(
-                nn.Conv3d(in_channels, out_channels, kernel_size, bias=bias),
-               )
-    return layer
+      return nn.Sequential(
+          nn.Conv3d(in_channels, out_channels, kernel_size, bias=bias),
+      )
 
   def forward(self, x,y):
-        # print("x,y", x.shape, "  ", y.shape)
-        x_in=torch.cat((x, y), 1)  
-        e0 = self.eninput(x_in)
+      # print("x,y", x.shape, "  ", y.shape)
+      x_in=torch.cat((x, y), 1)
+      e0 = self.eninput(x_in)
 
-        # print("e0", e0.shape)
+      # print("e0", e0.shape)
 
-        e0 = self.ec1(e0)
-        es1 = self.ec2(e0)   #strided
-        # print("e0", e0.shape)
-        # print("es1", es1.shape)
+      e0 = self.ec1(e0)
+      es1 = self.ec2(e0)   #strided
+      # print("e0", e0.shape)
+      # print("es1", es1.shape)
 
-        e1 = self.ec3(es1)   
-        es2 = self.ec4(e1)   #strided
-        # print("e1", e1.shape)
-        # print("es2", es2.shape)
+      e1 = self.ec3(es1)
+      es2 = self.ec4(e1)   #strided
+      # print("e1", e1.shape)
+      # print("es2", es2.shape)
 
-        e2 = self.ec5(es2)
-        es3 = self.ec6(e2)   #strided
-        # print("e2", e2.shape)
-        # print("es3", es3.shape)
+      e2 = self.ec5(es2)
+      es3 = self.ec6(e2)   #strided
+      # print("e2", e2.shape)
+      # print("es3", es3.shape)
 
-        
 
-        d0 = self.dc1(es3)
-        # print("d0", d0.shape)
 
-        d0 = torch.add(self.up1(d0), e2)
-        # print("d0", d0.shape)
+      d0 = self.dc1(es3)
+      # print("d0", d0.shape)
 
-        d1 = self.dc2(d0)
-        d1 = torch.add(self.up2(d1), e1)
-        # print("d1", d1.shape)
+      d0 = torch.add(self.up1(d0), e2)
+      # print("d0", d0.shape)
 
-        d2 = self.dc3(d1)
-        d2 = torch.add(self.up3(d2), e0)
-        # print("d2", d2.shape)
+      d1 = self.dc2(d0)
+      d1 = torch.add(self.up2(d1), e1)
+      # print("d1", d1.shape)
 
-        output = self.dc4(d2)
-        return output
+      d2 = self.dc3(d1)
+      d2 = torch.add(self.up3(d2), e0)
+      return self.dc4(d2)
 
 torch.cuda.empty_cache()
 model = Admir_Deformable_UNet(2,3,16).cuda() # assining cuda to model
@@ -355,11 +367,11 @@ def normalized_cross_correlation(x, y, return_map, reduction='mean', eps=1e-8):
     elif reduction == 'sum':
         ncc = torch.sum(ncc)
     else:
-        raise KeyError('unsupported reduction type: %s' % reduction)
+        raise KeyError(f'unsupported reduction type: {reduction}')
 
     if not return_map:
         return ncc
-    
+
     if (torch.isclose(torch.tensor([-1.0]).to("cuda"), ncc).any()):
       ncc = ncc + torch.tensor([0.01]).to("cuda")
 
@@ -453,55 +465,60 @@ if not os.path.isdir(model_dir):
 
 # X --> fixed and Y --> moving
 def fullmodel_one_epoch_run(epoch=1):
-  cc_loss_lst = []
-  smoothness_loss_lst = []
-  example_number = 0
-  for X,Y in training_generator:
+    cc_loss_lst = []
+    smoothness_loss_lst = []
+    example_number = 0
+    for X,Y in training_generator:
 
-    X = X.cuda().float()
-    Y = Y.cuda().float()
-    dvf = deformable_model(X, Y) 
-    
-    fully_warped_image =  stn_deformable(Y,dvf)  
+      X = X.cuda().float()
+      Y = Y.cuda().float()
+      dvf = deformable_model(X, Y) 
 
-    deformable_loss = similarity_loss(X, fully_warped_image) 
-    smooth_loss = smoothness_loss.loss("",dvf)
+      fully_warped_image =  stn_deformable(Y,dvf)  
 
-    total_loss = - 1.0 * deformable_loss + 1.0 * smooth_loss
-    optimizer.zero_grad()          
-    total_loss.backward() 
-    optimizer.step() 
+      deformable_loss = similarity_loss(X, fully_warped_image) 
+      smooth_loss = smoothness_loss.loss("",dvf)
 
-    del X, Y, dvf, fully_warped_image
+      total_loss = - 1.0 * deformable_loss + 1.0 * smooth_loss
+      optimizer.zero_grad()          
+      total_loss.backward() 
+      optimizer.step() 
 
-    example_number = example_number + 1
-    cc_loss_lst.append(deformable_loss.detach().cpu().numpy().item())
-    smoothness_loss_lst.append(smooth_loss.detach().cpu().numpy().item())
+      del X, Y, dvf, fully_warped_image
+
+      example_number = example_number + 1
+      cc_loss_lst.append(deformable_loss.detach().cpu().numpy().item())
+      smoothness_loss_lst.append(smooth_loss.detach().cpu().numpy().item())
 
 
-  if (epoch%25 == 0):
-    modelname = model_dir + '/' + "complete_admir_" + str(epoch) + '.pth'
-    torch.save({"deformable_model": deformable_model.state_dict()}, modelname)
-    print("epoch: {}".format(epoch))
-    print("Losses of only last batch: {} and {}".format(deformable_loss, smooth_loss))
-    print("Epoch Average Losses: {}, {}".format(sum(cc_loss_lst)/len(cc_loss_lst), sum(abs(x) for x in smoothness_loss_lst)/len(smoothness_loss_lst) ) )
-    print("Saving model checkpoints")
-    print("======= =============== ===========")
-    print()
-  else:
-    print("epoch: {}".format(epoch))
-    print("Losses of only last batch: {} and {}".format(deformable_loss, smooth_loss))
-    print("Epoch Average Losses: {}, {}".format(sum(cc_loss_lst)/len(cc_loss_lst), sum(abs(x) for x in smoothness_loss_lst)/len(smoothness_loss_lst) ) )
+    if (epoch%25 == 0):
+        modelname = f'{model_dir}/complete_admir_{str(epoch)}.pth'
+        torch.save({"deformable_model": deformable_model.state_dict()}, modelname)
+        print(f"epoch: {epoch}")
+        print(f"Losses of only last batch: {deformable_loss} and {smooth_loss}")
+        print(
+            f"Epoch Average Losses: {sum(cc_loss_lst) / len(cc_loss_lst)}, {sum(abs(x) for x in smoothness_loss_lst) / len(smoothness_loss_lst)}"
+        )
+
+        print("Saving model checkpoints")
+    else:
+        print(f"epoch: {epoch}")
+        print(f"Losses of only last batch: {deformable_loss} and {smooth_loss}")
+        print(
+            f"Epoch Average Losses: {sum(cc_loss_lst) / len(cc_loss_lst)}, {sum(abs(x) for x in smoothness_loss_lst) / len(smoothness_loss_lst)}"
+        )
+
+
     print("======= =============== ===========")
     print()
 
 epochs=2
 start_time = time.time()
 for e in range(epochs):
-  fullmodel_one_epoch_run(epoch=e)
- 
-  end_time = time.time()
-  print("Total time taken: {} minutes".format((end_time-start_time)/60.0))
+    fullmodel_one_epoch_run(epoch=e)
+
+    end_time = time.time()
+    print(f"Total time taken: {(end_time - start_time) / 60.0} minutes")
 
 
 
@@ -529,32 +546,39 @@ stn_deformable_inference.eval()
 deformable_model_inference.eval()
 
 def fullmodel_inference_loop(epoch=1):
-  example_number = 0
-  counter = 0
-  for X,Y in validation_generator:
+    example_number = 0
+    counter = 0
+    for X,Y in validation_generator:
 
-    X = X.float().to("cuda")
-    Y = Y.float().to("cuda")
+        X = X.float().to("cuda")
+        Y = Y.float().to("cuda")
 
-    dvf = deformable_model_inference(X, Y) 
-    
-    fully_warped_image =  stn_deformable_inference(Y,dvf)  
-    
-    full_warped_np = fully_warped_image.detach().to("cpu").numpy()
-    full_warped_nb = nb.Nifti1Image(full_warped_np[0,0,:,:,:], np.eye(4))
-    nb.save(full_warped_nb, os.path.join(output_image_folder,os.path.basename(file_names_t1[counter])[:-7]+"_F_"+os.path.basename(file_names_t2[counter])[:-7]+"_M.nii.gz"))
+        dvf = deformable_model_inference(X, Y) 
 
-    counter = counter + 1
-    print(counter)
-    del X, Y, fully_warped_image, dvf
-    torch.cuda.empty_cache() 
-   
-    example_number = example_number + 1
-   
+        fully_warped_image =  stn_deformable_inference(Y,dvf)  
+
+        full_warped_np = fully_warped_image.detach().to("cpu").numpy()
+        full_warped_nb = nb.Nifti1Image(full_warped_np[0,0,:,:,:], np.eye(4))
+        nb.save(
+            full_warped_nb,
+            os.path.join(
+                output_image_folder,
+                f"{os.path.basename(file_names_t1[counter])[:-7]}_F_{os.path.basename(file_names_t2[counter])[:-7]}_M.nii.gz",
+            ),
+        )
+
+
+        counter = counter + 1
+        print(counter)
+        del X, Y, fully_warped_image, dvf
+        torch.cuda.empty_cache() 
+
+        example_number = example_number + 1
+
 
 # Remove below condition if you want to run validation for all the images
-    if(counter > 3):
-      break;
+        if(counter > 3):
+          break;
 
 fullmodel_inference_loop()
 
@@ -608,17 +632,17 @@ class Admir_Affine_Encoder(nn.Module):
                                                 stride=self.stride, padding=self.padding, bias=self.bias ),
                             nn.BatchNorm3d(self.start_channel*2),
                             nn.LeakyReLU())
-        
+
         self.encoder2 = nn.Sequential(nn.Conv3d(self.start_channel*2, self.start_channel*3, self.kernel_size, 
                                                 stride=self.stride, padding=self.padding, bias=self.bias ),
                             nn.BatchNorm3d(self.start_channel*3),
                             nn.LeakyReLU())
-        
+
         self.encoder3 = nn.Sequential(nn.Conv3d(self.start_channel*3, self.start_channel*4, self.kernel_size, 
                                                 stride=self.stride, padding=self.padding, bias=self.bias ),
                             nn.BatchNorm3d(self.start_channel*4),
                             nn.LeakyReLU())
-        
+
         self.encoder4 = nn.Sequential(nn.Conv3d(self.start_channel*4, self.start_channel*5, self.kernel_size, 
                                                 stride=self.stride, padding=self.padding, bias=self.bias ),
                             nn.BatchNorm3d(self.start_channel*5),
@@ -636,13 +660,12 @@ class Admir_Affine_Encoder(nn.Module):
     
 
     def create_model(self):
-      for i in range(self.num_conv_blocks):
-          if(i == 0):
-            lyr = self.affine_conv_block(in_channels = self.in_channel, out_channels = self.start_channel)
-            lyr.to("cuda")
-            self.encoder_layer_list.append(lyr)
-          else:
-            lyr = self.affine_conv_block(in_channels= self.start_channel * i, out_channels = self.start_channel * (i+1))
+        for i in range(self.num_conv_blocks):
+            if (i == 0):
+                lyr = self.affine_conv_block(in_channels = self.in_channel, out_channels = self.start_channel)
+            else:
+                lyr = self.affine_conv_block(in_channels= self.start_channel * i, out_channels = self.start_channel * (i+1))
+
             lyr.to("cuda")
             self.encoder_layer_list.append(lyr)
 
@@ -712,33 +735,26 @@ class Admir_Affine_Translation_Output(nn.Module):
           )
 
   def forward(self, input_tnsr):
-    ip = input_tnsr.flatten(start_dim=1, end_dim=4)
-    translation_output = self.trns_ob(ip)
-    return translation_output
+      ip = input_tnsr.flatten(start_dim=1, end_dim=4)
+      return self.trns_ob(ip)
 
   def translation_output_block(self, in_units, out_units):
-    layer = nn.Sequential(
-          nn.Linear(in_features = in_units, out_features= out_units),
+      return nn.Sequential(
+          nn.Linear(in_features=in_units, out_features=out_units),
           PrintLayer(),
           nn.Dropout(p=self.dropout_prob),
-          
-          nn.Linear(in_features=out_units, out_features= out_units//2),
-          #PrintLayer(),
+          nn.Linear(in_features=out_units, out_features=out_units // 2),
+          # PrintLayer(),
           nn.Dropout(p=self.dropout_prob),
-
-          nn.Linear(in_features=out_units//2, out_features= out_units//4),
-          #PrintLayer(),
+          nn.Linear(in_features=out_units // 2, out_features=out_units // 4),
+          # PrintLayer(),
           nn.Dropout(p=self.dropout_prob),
-
-          nn.Linear(in_features=out_units//4, out_features= out_units//8),
-          #PrintLayer(),
+          nn.Linear(in_features=out_units // 4, out_features=out_units // 8),
+          # PrintLayer(),
           nn.Dropout(p=self.dropout_prob),
-
-          nn.Linear(in_features=out_units//8, out_features= 3)
-          #PrintLayer()
-          ).to("cuda")
-
-    return layer
+          nn.Linear(in_features=out_units // 8, out_features=3)
+          # PrintLayer()
+      ).to("cuda")
 
 class Admir_Affine_Shear_Output(nn.Module):
   def __init__(self, in_units, out_units=128, dropout_prob = 0.2):
@@ -754,9 +770,8 @@ class Admir_Affine_Shear_Output(nn.Module):
           nn.Tanh())
   
   def forward(self, input_tnsr):
-    ip = input_tnsr.flatten(start_dim=1, end_dim=4)
-    rotate_scale_shear_output = self.rss_ob(ip)
-    return rotate_scale_shear_output
+      ip = input_tnsr.flatten(start_dim=1, end_dim=4)
+      return self.rss_ob(ip)
 
 affine_translation_output = Admir_Affine_Translation_Output( in_units= 2560).to("cuda")
 affine_shear_output = Admir_Affine_Shear_Output( in_units= 2560).to("cuda")
@@ -914,10 +929,7 @@ class VolumePreservingLoss(nn.Module):
         self.mse_loss = torch.nn.MSELoss(reduce="mean")
 
     def forward(self, M):
-      #print(det3x3(M))
-      #print(self.onetnsr)      
-      det_loss = self.mse_loss(det3x3(M), self.onetnsr)
-      return det_loss
+        return self.mse_loss(det3x3(M), self.onetnsr)
 
 class OrthogonalTransformLoss(nn.Module):
     def __init__(self):
@@ -928,10 +940,11 @@ class OrthogonalTransformLoss(nn.Module):
       self.epsI = torch.FloatTensor([[[self.eps * elem for elem in row] for row in Mat] for Mat in self.I]).to("cuda")
 
     def forward(self, M):
-      C = torch.matmul(M, torch.transpose(M,1,2)) + self.epsI
-      s1, s2, s3 = elem_sym_polys_of_eigen_values(C)
-      ortho_loss = torch.sum(s1 + (1 + self.eps) * (1 + self.eps) * s2 / s3 - 3 * 2 * (1 + self.eps))
-      return ortho_loss
+        C = torch.matmul(M, torch.transpose(M,1,2)) + self.epsI
+        s1, s2, s3 = elem_sym_polys_of_eigen_values(C)
+        return torch.sum(
+            s1 + (1 + self.eps) * (1 + self.eps) * s2 / s3 - 3 * 2 * (1 + self.eps)
+        )
 
 M = torch.randn(size=(2,3,3)).to("cuda")
 vpl = VolumePreservingLoss()
@@ -974,81 +987,81 @@ batch_size = 2
 
 for X,Y in training_generator:
 
-  # X = X.cuda().float()
-  # Y = Y.cuda().float()
+      # X = X.cuda().float()
+      # Y = Y.cuda().float()
 
-  print("X shape: {}".format(X.shape))
-  print("Y shape: {}".format(Y.shape))
-  affine_conv_out = affine_conv_model(X, Y)
-  # print(affine_conv_out.shape)
+    print(f"X shape: {X.shape}")
+    print(f"Y shape: {Y.shape}")
+    affine_conv_out = affine_conv_model(X, Y)
+    # print(affine_conv_out.shape)
 
-  affine_output_out = affine_output_model(affine_conv_out)
-  print(affine_output_out[0].shape)
-  print(affine_output_out[1].shape)
+    affine_output_out = affine_output_model(affine_conv_out)
+    print(affine_output_out[0].shape)
+    print(affine_output_out[1].shape)
 
-  print("========== ============== =============")
-  print()
+    print("========== ============== =============")
+    print()
 
-  affine_tnsr = torch.cat((affine_output_out[1], affine_output_out[0]), 1)
-  theta = torch.reshape(affine_tnsr, (batch_size, 3, 4))
+    affine_tnsr = torch.cat((affine_output_out[1], affine_output_out[0]), 1)
+    theta = torch.reshape(affine_tnsr, (batch_size, 3, 4))
 
-  
-  # Suraj: Set the new theta and reshape it
-  stn_affine.theta = theta
-  print("========== ============== =============")
-  print("theta shape: {}".format(theta.shape))
-  print(theta)
 
-  # print("========== ============== =============")
-  # grid = F.affine_grid(theta, (2, 1, 128, 128, 128))
-  # print(grid.shape)
-  # print(grid)
+    # Suraj: Set the new theta and reshape it
+    stn_affine.theta = theta
+    print("========== ============== =============")
+    print(f"theta shape: {theta.shape}")
+    print(theta)
 
-  # Suraj: Added coarsely warped image, changed dvf_final calculation
-  # DVF1 shape was [batch size, 128, 128, 128, 3] --> permuted order of columns to match deformable dvf 2 [batch size, 3, 128, 128, 128]
-  coarsely_warped_image = stn_affine(Y)
-  dvf_1 = stn_affine.grid
-  dvf_1 = dvf_1.permute(0, 4, 1, 2, 3)
+    # print("========== ============== =============")
+    # grid = F.affine_grid(theta, (2, 1, 128, 128, 128))
+    # print(grid.shape)
+    # print(grid)
 
-  print("======= =============== ===========")
-  print("Coarsely warped image shape: {}".format(coarsely_warped_image.shape))
-  print("dvf 1 shape: {}".format(dvf_1.shape))
-  print("=========== ============= ==========")
-  print()
+    # Suraj: Added coarsely warped image, changed dvf_final calculation
+    # DVF1 shape was [batch size, 128, 128, 128, 3] --> permuted order of columns to match deformable dvf 2 [batch size, 3, 128, 128, 128]
+    coarsely_warped_image = stn_affine(Y)
+    dvf_1 = stn_affine.grid
+    dvf_1 = dvf_1.permute(0, 4, 1, 2, 3)
 
-  print(" ==== Starting deformable warping =======")
-  dvf_2 = deformable_model(coarsely_warped_image, Y) 
-  print("deformable field dvf 2 shape: {}".format(dvf_2.shape))
-  print("========== ============== =============")
-  print()
+    print("======= =============== ===========")
+    print(f"Coarsely warped image shape: {coarsely_warped_image.shape}")
+    print(f"dvf 1 shape: {dvf_1.shape}")
+    print("=========== ============= ==========")
+    print()
 
-  print(" interim warp ")
-  interim_warp_field = stn_aggregation(dvf_1,dvf_2)
-  print("interim warp field shape: {}".format(interim_warp_field.shape))
-  print("========== ============== =============")
-  print()
+    print(" ==== Starting deformable warping =======")
+    dvf_2 = deformable_model(coarsely_warped_image, Y)
+    print(f"deformable field dvf 2 shape: {dvf_2.shape}")
+    print("========== ============== =============")
+    print()
 
-  
-  dvf_final = dvf_2 + interim_warp_field
-  print("final dvf shape: {}".format(dvf_final.shape))
-  print("========== ============== =============")
-  print()
+    print(" interim warp ")
+    interim_warp_field = stn_aggregation(dvf_1,dvf_2)
+    print(f"interim warp field shape: {interim_warp_field.shape}")
+    print("========== ============== =============")
+    print()
 
-  fully_warped_image =  stn_fully_warped(Y,dvf_final)  #final fully warped image , i.e. equation 4 of the image
-  print("final warped image shape: {}".format(fully_warped_image.shape))
-  print("========== ============== =============")
-  print()
-  
 
-  del X
-  del Y
-  del interim_warp_field
-  del dvf_1
-  del dvf_2
-  del dvf_final
-  del fully_warped_image
+    dvf_final = dvf_2 + interim_warp_field
+    print(f"final dvf shape: {dvf_final.shape}")
+    print("========== ============== =============")
+    print()
 
-  """
+    fully_warped_image =  stn_fully_warped(Y,dvf_final)  #final fully warped image , i.e. equation 4 of the image
+    print(f"final warped image shape: {fully_warped_image.shape}")
+    print("========== ============== =============")
+    print()
+
+
+    del X
+    del Y
+    del interim_warp_field
+    del dvf_1
+    del dvf_2
+    del dvf_final
+    del fully_warped_image
+
+    """
   # something is missing here may be: TBD
 
   dvf_1 = F.grid_sample(Y, grid)    #named as g1 in the image
@@ -1125,7 +1138,7 @@ affine_matrix
 similarity_loss = NormalizedCrossCorrelation()
 smooth_loss = Smoothnessloss()
 
-optimizer = torch.optim.Adam( list( affine_conv_model.parameters()) + list( affine_output_model.parameters() ) , lr=lr ) 
+optimizer = torch.optim.Adam( list( affine_conv_model.parameters()) + list( affine_output_model.parameters() ) , lr=lr )
 model_dir = '/content/drive/My Drive/Image_Registration_Project/Model'
 
 if not os.path.isdir(model_dir):
@@ -1139,79 +1152,79 @@ batch_size = 2
 
 # X --> fixed and Y --> moving
 def affine_one_epoch_run(epoch=1):
-  for X,Y in training_generator:
+    for X,Y in training_generator:
 
-    X = X.cuda().float()
-    Y = Y.cuda().float()
+      X = X.cuda().float()
+      Y = Y.cuda().float()
 
-    #print("X shape: {}".format(X.shape))
-    #print("Y shape: {}".format(Y.shape))
-    affine_conv_out = affine_conv_model(X, Y)
-    # print(affine_conv_out.shape)
+      #print("X shape: {}".format(X.shape))
+      #print("Y shape: {}".format(Y.shape))
+      affine_conv_out = affine_conv_model(X, Y)
+      # print(affine_conv_out.shape)
 
-    affine_output_out = affine_output_model(affine_conv_out)
-    #print(affine_output_out[0].shape)
-    #print(affine_output_out[1].shape)
+      affine_output_out = affine_output_model(affine_conv_out)
+      #print(affine_output_out[0].shape)
+      #print(affine_output_out[1].shape)
 
-    #print("========== ============== =============")
-    #print()
+      #print("========== ============== =============")
+      #print()
 
-    rss_rt = torch.reshape(affine_output_out[1],(batch_size, 3, 3))
-    t_rt = torch.reshape(affine_output_out[0], (batch_size, 3, 1))
+      rss_rt = torch.reshape(affine_output_out[1],(batch_size, 3, 3))
+      t_rt = torch.reshape(affine_output_out[0], (batch_size, 3, 1))
 
-    theta = torch.cat((rss_rt, t_rt), 2)
-    #print(theta)
-    #print("========== ============== =============")
-    #print()
-    # theta = affine_matrix - theta
-    #print(theta)
-    
-    # Suraj: Set the new theta and reshape it
-    stn_affine.theta = theta
-    #print("========== ============== =============")
-    #print("theta shape: {}".format(theta.shape))
-    #print(theta)
+      theta = torch.cat((rss_rt, t_rt), 2)
+      #print(theta)
+      #print("========== ============== =============")
+      #print()
+      # theta = affine_matrix - theta
+      #print(theta)
 
-    # print("========== ============== =============")
-    # grid = F.affine_grid(theta, (2, 1, 128, 128, 128))
-    # print(grid.shape)
-    # print(grid)
+      # Suraj: Set the new theta and reshape it
+      stn_affine.theta = theta
+      #print("========== ============== =============")
+      #print("theta shape: {}".format(theta.shape))
+      #print(theta)
 
-    # Suraj: Added coarsely warped image, changed dvf_final calculation
-    # DVF1 shape was [batch size, 128, 128, 128, 3] --> permuted order of columns to match deformable dvf 2 [batch size, 3, 128, 128, 128]
-    coarsely_warped_image = stn_affine(Y)
-    dvf_1 = stn_affine.grid
-    dvf_1 = dvf_1.permute(0, 4, 1, 2, 3)
+      # print("========== ============== =============")
+      # grid = F.affine_grid(theta, (2, 1, 128, 128, 128))
+      # print(grid.shape)
+      # print(grid)
 
-    #print("======= =============== ===========")
-    #print("Coarsely warped image shape: {}".format(coarsely_warped_image.shape))
-    #print("dvf 1 shape: {}".format(dvf_1.shape))
-    #print("=========== ============= ==========")
-    #print()
+      # Suraj: Added coarsely warped image, changed dvf_final calculation
+      # DVF1 shape was [batch size, 128, 128, 128, 3] --> permuted order of columns to match deformable dvf 2 [batch size, 3, 128, 128, 128]
+      coarsely_warped_image = stn_affine(Y)
+      dvf_1 = stn_affine.grid
+      dvf_1 = dvf_1.permute(0, 4, 1, 2, 3)
 
-    affine_loss = similarity_loss(X, coarsely_warped_image) 
-    optimizer.zero_grad()          
-    affine_loss.backward()           
-    optimizer.step() 
+      #print("======= =============== ===========")
+      #print("Coarsely warped image shape: {}".format(coarsely_warped_image.shape))
+      #print("dvf 1 shape: {}".format(dvf_1.shape))
+      #print("=========== ============= ==========")
+      #print()
 
-    torch.cuda.empty_cache()
+      affine_loss = similarity_loss(X, coarsely_warped_image) 
+      optimizer.zero_grad()          
+      affine_loss.backward()           
+      optimizer.step() 
 
-    del X
-    del Y
-    del coarsely_warped_image
-    del dvf_1
-  
+      torch.cuda.empty_cache()
 
+      del X
+      del Y
+      del coarsely_warped_image
+      del dvf_1
 
 
-  modelname = model_dir + '/' + "affine_admir_" + str(epoch) + '.pth'
-  torch.save({"affine_conv_model": affine_conv_model.state_dict(), "affine_output_model": affine_output_model.state_dict()}, modelname)
-  print("epoch: {}".format(epoch))
-  print("Loss: {}".format(affine_loss))
-  print("theta: {}".format(stn_affine.theta))
-  print("Saving model checkpoints")
-  print("======= =============== ===========")
-  print()
+
+
+    modelname = f'{model_dir}/affine_admir_{str(epoch)}.pth'
+    torch.save({"affine_conv_model": affine_conv_model.state_dict(), "affine_output_model": affine_output_model.state_dict()}, modelname)
+    print(f"epoch: {epoch}")
+    print(f"Loss: {affine_loss}")
+    print(f"theta: {stn_affine.theta}")
+    print("Saving model checkpoints")
+    print("======= =============== ===========")
+    print()
 
 epochs = 10
 for e in range(epochs):
@@ -1318,11 +1331,12 @@ plt.imshow(mynb_np2[0, :, :, 25])
 
 """# Training Full model"""
 
-boltn = torch.isnan(torch.from_numpy(np.array([[1.0, 0.2, np.nan], [1.0, 0.2, -0.4]]))).any()
-if(boltn):
-  print("true")
+if boltn := torch.isnan(
+    torch.from_numpy(np.array([[1.0, 0.2, np.nan], [1.0, 0.2, -0.4]]))
+).any():
+    print("true")
 else:
-  print("false")
+    print("false")
 
 affine_conv_model = Admir_Affine_Encoder(in_channel=2, start_channel=8, num_conv_blocks=5)
 affine_conv_model.to("cuda")
@@ -1397,7 +1411,7 @@ volume_preserving_loss = VolumePreservingLoss()
 orthogonal_transformation_loss = OrthogonalTransformLoss()
 
 optimizer = torch.optim.Adam( list( affine_conv_model.parameters()) + list( affine_translation_model.parameters() ) + 
-                             list( affine_shear_model.parameters()) + list(deformable_model.parameters() ), lr=lr ) 
+                             list( affine_shear_model.parameters()) + list(deformable_model.parameters() ), lr=lr )
 model_dir = '/content/drive/My Drive/Image_Registration_Project/fullmodel2'
 
 if not os.path.isdir(model_dir):
@@ -1794,9 +1808,7 @@ x2 = x2[0, 0, :, :]
 x2 = x2.flatten()
 
 def calc_MI(x, y, bins):
-    #c_xy = np.histogram2d(x, y, bins)[0]
-    mi = normalized_mutual_info_score(x, y)
-    return mi
+    return normalized_mutual_info_score(x, y)
 
 print(calc_MI( np.random.randn((128*128)), np.zeros((128*128,), dtype=float) , bins=10))
 

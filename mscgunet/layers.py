@@ -22,43 +22,41 @@ class SpatialTransformer(nn.Module):
         # than they need to be. so far, there does not appear to be an elegant solution.
         # see: https://discuss.pytorch.org/t/how-to-register-buffer-without-polluting-state-dict
 
-        if (self.isaffine):
-          grid = F.affine_grid(self.theta, self.affine_image_size, align_corners=False)
-          #grid = grid.permute(0, 4, 1, 2, 3)
-          self.register_buffer('grid', grid)
+        if self.isaffine:
+            grid = F.affine_grid(self.theta, self.affine_image_size, align_corners=False)
         else:
-          vectors = [torch.arange(0, s) for s in size]
-          grids = torch.meshgrid(vectors)
-          grid = torch.stack(grids)
-          grid = torch.unsqueeze(grid, 0)
-          grid = grid.type(torch.FloatTensor)
-          self.register_buffer('grid', grid)
+            vectors = [torch.arange(0, s) for s in size]
+            grids = torch.meshgrid(vectors)
+            grid = torch.stack(grids)
+            grid = torch.unsqueeze(grid, 0)
+            grid = grid.type(torch.FloatTensor)
+
+        #grid = grid.permute(0, 4, 1, 2, 3)
+        self.register_buffer('grid', grid)
 
     def forward(self, src, flow=None):
-      if (self.isaffine):
-        grid = F.affine_grid(self.theta, self.affine_image_size)
-        warped_image = F.grid_sample(src, grid)
-        #warped_image = warped_image.permute(0, 4, 1, 2, 3)
-        return warped_image
-      else:
-        # new locations
-        new_locs = self.grid + flow
-        shape = flow.shape[2:]
+        if self.isaffine:
+            grid = F.affine_grid(self.theta, self.affine_image_size)
+            return F.grid_sample(src, grid)
+        else:
+            # new locations
+            new_locs = self.grid + flow
+            shape = flow.shape[2:]
 
-        # need to normalize grid values to [-1, 1] for resampler
-        for i in range(len(shape)):
-            new_locs[:, i, ...] = 2 * (new_locs[:, i, ...] / (shape[i] - 1) - 0.5)
+            # need to normalize grid values to [-1, 1] for resampler
+            for i in range(len(shape)):
+                new_locs[:, i, ...] = 2 * (new_locs[:, i, ...] / (shape[i] - 1) - 0.5)
 
-        # move channels dim to last position
-        # also not sure why, but the channels need to be reversed
-        if len(shape) == 2:
-            new_locs = new_locs.permute(0, 2, 3, 1)
-            new_locs = new_locs[..., [1, 0]]
-        elif len(shape) == 3:
-            new_locs = new_locs.permute(0, 2, 3, 4, 1)
-            new_locs = new_locs[..., [2, 1, 0]]
+            # move channels dim to last position
+            # also not sure why, but the channels need to be reversed
+            if len(shape) == 2:
+                new_locs = new_locs.permute(0, 2, 3, 1)
+                new_locs = new_locs[..., [1, 0]]
+            elif len(shape) == 3:
+                new_locs = new_locs.permute(0, 2, 3, 4, 1)
+                new_locs = new_locs[..., [2, 1, 0]]
 
-        return F.grid_sample(src, new_locs, align_corners=True, mode=self.mode)
+            return F.grid_sample(src, new_locs, align_corners=True, mode=self.mode)
 
 
 class VecInt(nn.Module):
@@ -91,9 +89,9 @@ class ResizeTransform(nn.Module):
         self.factor = 1.0 / vel_resize
         self.mode = 'linear'
         if ndims == 2:
-            self.mode = 'bi' + self.mode
+            self.mode = f'bi{self.mode}'
         elif ndims == 3:
-            self.mode = 'tri' + self.mode
+            self.mode = f'tri{self.mode}'
 
     def forward(self, x):
         if self.factor < 1:

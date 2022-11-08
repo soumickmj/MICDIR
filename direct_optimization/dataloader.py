@@ -12,7 +12,7 @@ def load_3D( name):
     # #model_np = np.reshape(model_np, (1,)+ model_np.shape)
     # return model_np
     resamplng_shape = (128, 128, 128)
-    
+
 
     X_nb = nb.load(name)
     X_np = X_nb.dataobj
@@ -56,8 +56,7 @@ def imgnorm(N_I,index1=0.0001,index2=0.0001):
     N_I =1.0*(N_I-I_min)/(I_max-I_min)
     N_I[N_I>1.0]=1.0
     N_I[N_I<0.0]=0.0
-    N_I2 = N_I.astype(np.float32)
-    return N_I2
+    return N_I.astype(np.float32)
 
 
 def Norm_Zscore( img):
@@ -67,8 +66,7 @@ def Norm_Zscore( img):
 
 def run3functions( fp):
     myimg = load_4D(fp)
-    myimg2 = imgnorm(myimg)
-    return myimg2
+    return imgnorm(myimg)
 
 
 class direct_optimization_dataset:

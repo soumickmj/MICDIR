@@ -17,5 +17,5 @@ for fixed, moving in zip(file_names_f, file_names_m):
      t2_moving = ants.image_read(moving)
      mytx = ants.registration(fixed=t1_fixed, moving=t2_moving, type_of_transform='Affine')
      warped_moving = mytx['warpedmovout']
-     ants_output = '<result path>'+ os.path.basename(fixed)[:-7] + "_F_" + os.path.basename(moving)[:-7] + "_M.nii.gz"
+     ants_output = f'<result path>{os.path.basename(fixed)[:-7]}_F_{os.path.basename(moving)[:-7]}_M.nii.gz'
      ants.image_write(warped_moving, ants_output, ri=False)

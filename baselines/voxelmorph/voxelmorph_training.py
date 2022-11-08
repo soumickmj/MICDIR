@@ -179,8 +179,8 @@ ne.plot.slices(images, titles=titles, cmaps=['gray'], do_colorbars=True);
 
 nb_features = [[32, 32, 32, 32, 32], [32, 32, 32, 32, 32, 32, 16]]
 vol_shape = data_np.shape[1:]
-print("shape of volume: {}".format(vol_shape))
-print("Filters in Unet: {}".format(nb_features))
+print(f"shape of volume: {vol_shape}")
+print(f"Filters in Unet: {nb_features}")
 
 # unet
 vxm_model = vxm.networks.VxmDense(vol_shape, nb_features, int_steps=3)

@@ -45,7 +45,7 @@ if __name__ == "__main__":
                                 fixed_img_tnsr_lst = fixed_img_tnsr_lst, moving_img_tnsr_lst = moving_img_tnsr_lst, optimizer_dict=optimizer_dict['optimizer_rmsprop'],
                                 data_path_lst_fixed=file_names_fixed, data_path_lst_moving=file_names_moving, data_path_warped=data_path_warped, 
                                 spatial_transformer_deformable=spatial_transformer_deformable)
-    
+
 
     losses_dict = direct_optimization_model.direct_optimization_training()
     losses_dict = model.direct_optimization_training(epochs = 1001, decay_flag=False)

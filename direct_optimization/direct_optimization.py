@@ -36,7 +36,7 @@ def load_3D( name):
     # #model_np = np.reshape(model_np, (1,)+ model_np.shape)
     # return model_np
     resamplng_shape = (128, 128, 128)
-    
+
 
     X_nb = nb.load(name)
     X_np = X_nb.dataobj
@@ -80,8 +80,7 @@ def imgnorm(N_I,index1=0.0001,index2=0.0001):
     N_I =1.0*(N_I-I_min)/(I_max-I_min)
     N_I[N_I>1.0]=1.0
     N_I[N_I<0.0]=0.0
-    N_I2 = N_I.astype(np.float32)
-    return N_I2
+    return N_I.astype(np.float32)
 
 
 def Norm_Zscore( img):
@@ -91,8 +90,7 @@ def Norm_Zscore( img):
 
 def run3functions( fp):
     myimg = load_4D(fp)
-    myimg2 = imgnorm(myimg)
-    return myimg2
+    return imgnorm(myimg)
 
 # data_path_fixed = "/content/drive/MyDrive/DATASET_FINAL/Test/intramodal/T1/pairwise_registered/Batch_1"
 # data_path_moving = "/content/drive/MyDrive/DATASET_FINAL/Test/intramodal/T1/pairwise_registered/Batch_1_F_Batch_2_M"
@@ -159,9 +157,9 @@ class ResizeTransform(nn.Module):
         self.factor = 1.0 / vel_resize
         self.mode = 'linear'
         if ndims == 2:
-            self.mode = 'bi' + self.mode
+            self.mode = f'bi{self.mode}'
         elif ndims == 3:
-            self.mode = 'tri' + self.mode
+            self.mode = f'tri{self.mode}'
 
     def forward(self, x):
         if self.factor < 1:
@@ -248,11 +246,11 @@ def normalized_cross_correlation(x, y, return_map, reduction='mean', eps=1e-8):
     elif reduction == 'sum':
         ncc = torch.sum(ncc)
     else:
-        raise KeyError('unsupported reduction type: %s' % reduction)
+        raise KeyError(f'unsupported reduction type: {reduction}')
 
     if not return_map:
         return ncc
-    
+
     if (torch.isclose(torch.tensor([-1.0]).to("cuda"), ncc).any()):
       ncc = ncc + torch.tensor([0.01]).to("cuda")
 
@@ -265,8 +263,7 @@ def mae_loss(input, target):
     y_true_f = input.view(-1)
     y_pred_f = target.view(-1)
     diff = torch.abs(y_true_f-y_pred_f)
-    mae = diff.mean() 
-    return mae
+    return diff.mean()
 
 class Grad:
     """
@@ -322,11 +319,9 @@ class MutualInformation(nn.Module):
 
 	def jointPdf(self, kernel_values1, kernel_values2):
 
-		joint_kernel_values = torch.matmul(kernel_values1.transpose(1, 2), kernel_values2) 
-		normalization = torch.sum(joint_kernel_values, dim=(1,2)).view(-1, 1, 1) + self.epsilon
-		pdf = joint_kernel_values / normalization
-
-		return pdf
+	    joint_kernel_values = torch.matmul(kernel_values1.transpose(1, 2), kernel_values2)
+	    normalization = torch.sum(joint_kernel_values, dim=(1,2)).view(-1, 1, 1) + self.epsilon
+	    return joint_kernel_values / normalization
 
 
 	def getMutualInformation(self, input1, input2):
@@ -344,7 +339,7 @@ class MutualInformation(nn.Module):
 
 		x1 = input1.view(B, H*W*D, C)
 		x2 = input2.view(B, H*W*D, C)
-		
+
 		pdf_x1, kernel_values1 = self.marginalPdf(x1)
 		pdf_x2, kernel_values2 = self.marginalPdf(x2)
 		pdf_x1x2 = self.jointPdf(kernel_values1, kernel_values2)
@@ -354,7 +349,7 @@ class MutualInformation(nn.Module):
 		H_x1x2 = -torch.sum(pdf_x1x2*torch.log2(pdf_x1x2 + self.epsilon), dim=(1,2))
 
 		mutual_information = H_x1 + H_x2 - H_x1x2
-		
+
 		if self.normalize:
 			mutual_information = 2*mutual_information/(H_x1+H_x2)
 
@@ -394,46 +389,43 @@ class SpatialTransformer(nn.Module):
         # than they need to be. so far, there does not appear to be an elegant solution.
         # see: https://discuss.pytorch.org/t/how-to-register-buffer-without-polluting-state-dict
 
-        if (self.isaffine):
-          grid = F.affine_grid(self.theta, self.affine_image_size, align_corners=False)
-          #grid = grid.permute(0, 4, 1, 2, 3)
-          self.register_buffer('grid', grid)
+        if self.isaffine:
+            grid = F.affine_grid(self.theta, self.affine_image_size, align_corners=False)
         else:
-          vectors = [torch.arange(0, s) for s in size]
-          grids = torch.meshgrid(vectors)
-          grid = torch.stack(grids)
-          grid = torch.unsqueeze(grid, 0)
-          grid = grid.type(torch.FloatTensor)
-          self.register_buffer('grid', grid)
+            vectors = [torch.arange(0, s) for s in size]
+            grids = torch.meshgrid(vectors)
+            grid = torch.stack(grids)
+            grid = torch.unsqueeze(grid, 0)
+            grid = grid.type(torch.FloatTensor)
+
+        #grid = grid.permute(0, 4, 1, 2, 3)
+        self.register_buffer('grid', grid)
           # print(grid)
 
     def forward(self, src, flow=None):      
-      if (self.isaffine):
-        grid = F.affine_grid(self.theta, self.affine_image_size)    
-        # print(grid)    
-        warped_image = F.grid_sample(src, grid)
-        #warped_image = warped_image.permute(0, 4, 1, 2, 3)
-        return warped_image
-      else:
-        # new locations
-        # print(grid)
-        new_locs = self.grid + flow
-        shape = flow.shape[2:]
+        if self.isaffine:
+            grid = F.affine_grid(self.theta, self.affine_image_size)
+            return F.grid_sample(src, grid)
+        else:
+            # new locations
+            # print(grid)
+            new_locs = self.grid + flow
+            shape = flow.shape[2:]
 
-        # need to normalize grid values to [-1, 1] for resampler
-        for i in range(len(shape)):
-            new_locs[:, i, ...] = 2 * (new_locs[:, i, ...] / (shape[i] - 1) - 0.5)
+            # need to normalize grid values to [-1, 1] for resampler
+            for i in range(len(shape)):
+                new_locs[:, i, ...] = 2 * (new_locs[:, i, ...] / (shape[i] - 1) - 0.5)
 
-        # move channels dim to last position
-        # also not sure why, but the channels need to be reversed
-        if len(shape) == 2:
-            new_locs = new_locs.permute(0, 2, 3, 1)
-            new_locs = new_locs[..., [1, 0]]
-        elif len(shape) == 3:
-            new_locs = new_locs.permute(0, 2, 3, 4, 1)
-            new_locs = new_locs[..., [2, 1, 0]]
+            # move channels dim to last position
+            # also not sure why, but the channels need to be reversed
+            if len(shape) == 2:
+                new_locs = new_locs.permute(0, 2, 3, 1)
+                new_locs = new_locs[..., [1, 0]]
+            elif len(shape) == 3:
+                new_locs = new_locs.permute(0, 2, 3, 4, 1)
+                new_locs = new_locs[..., [2, 1, 0]]
 
-        return F.grid_sample(src, new_locs, align_corners=True, mode=self.mode)
+            return F.grid_sample(src, new_locs, align_corners=True, mode=self.mode)
 
 spatial_transformer_deformable = SpatialTransformer(size=(128, 128, 128), is_affine=False, affine_image_size =  (1, 1, 128, 128, 128)).to("cuda")
 for param in spatial_transformer_deformable.parameters():
@@ -472,7 +464,7 @@ scheduler_lst = [torch.optim.lr_scheduler.ExponentialLR(optimizer, gamma=0.99) f
 
 dim = 3
 int_downsize = 2
-down_shape = [int(dim/ int_downsize) for dim in (128, 128, 128)]
+down_shape = [dim // int_downsize for dim in (128, 128, 128)]
 resize = ResizeTransform(2, 3).to("cuda")
 fullsize = ResizeTransform(0.5, 3).to("cuda")
 integrate = VecInt(down_shape, 7).to("cuda")
@@ -480,73 +472,74 @@ integrate = VecInt(down_shape, 7).to("cuda")
 """function that optimizers for one image pair"""
 
 def optimize_one_image_pair(fixed_img_tnsr, moving_img_tnsr, deformation_field, optimizer = optimizer_dict['optimizer_adam'][0], scheduler = scheduler_lst[0], epochs=1001, decay_flag=False):
-  optimized_deformation_field_lst = []
-  loss_lst = []
-  for step in range(epochs):
-    
-    # Find warped image given moving image from spatial transformer
-    pos_flow = resize(deformation_field)
-    integrated_pos_flow = integrate(pos_flow)
-    full_flow = fullsize(integrated_pos_flow)
-    warped_image_tensor = spatial_transformer_deformable(moving_img_tnsr.contiguous(), full_flow)
-    
-    # Find loss between warped image and fixed image
-    similarity_loss_ncc = 1.0 * similarity_loss(fixed_img_tnsr.contiguous(), warped_image_tensor.contiguous())
-    sm_loss =  0.5 * smoothness_loss.loss("",deformation_field)
+    loss_lst = []
     #  similarity_loss_mae = 0.1 * mae_loss(fixed_img_tnsr.contiguous(), warped_image_tensor.contiguous())
     similarity_loss_mae = 0.0
-    total_loss = similarity_loss_ncc + sm_loss # + similarity_loss_mae
+    for step in range(epochs):
 
-    # Backpropagate loss through network
-    optimizer.zero_grad()          
-    total_loss.backward()
-    optimizer.step()
+        # Find warped image given moving image from spatial transformer
+        pos_flow = resize(deformation_field)
+        integrated_pos_flow = integrate(pos_flow)
+        full_flow = fullsize(integrated_pos_flow)
+        warped_image_tensor = spatial_transformer_deformable(moving_img_tnsr.contiguous(), full_flow)
 
-    # Decay if the falg is true
-    if decay_flag:
-      scheduler.step()
+        # Find loss between warped image and fixed image
+        similarity_loss_ncc = 1.0 * similarity_loss(fixed_img_tnsr.contiguous(), warped_image_tensor.contiguous())
+        sm_loss =  0.5 * smoothness_loss.loss("",deformation_field)
+        total_loss = similarity_loss_ncc + sm_loss # + similarity_loss_mae
 
-    # Log losses
-    if (step % 500 == 0):
-      # loss_lst.append(step, similarity_loss_ncc, sm_loss, similarity_loss_mae, total_loss)
-      print("losses at {} are {}, {}, {} and {}".format(step, similarity_loss_ncc, sm_loss, similarity_loss_mae, total_loss))
+        # Backpropagate loss through network
+        optimizer.zero_grad()
+        total_loss.backward()
+        optimizer.step()
 
-    # Save deformation field every multiple of 500 epoch that is 500,1000,1500,2000
-    if (step % 500 == 0) and (step > 0):
-      # deformation_field_detached = deformation_field.detach()
-      # optimized_deformation_field_lst.append(deformation_field_detached)
-      pass
-    
-    # delete unused warped image to save memeory
-    del warped_image_tensor
+        # Decay if the falg is true
+        if decay_flag:
+          scheduler.step()
 
-  # Save deformation field
-  deformation_field_detached = deformation_field.detach()
-  optimized_deformation_field_lst.append(deformation_field_detached)
+            # Log losses
+        if (step % 500 == 0):
+                  # loss_lst.append(step, similarity_loss_ncc, sm_loss, similarity_loss_mae, total_loss)
+            print(
+                f"losses at {step} are {similarity_loss_ncc}, {sm_loss}, {similarity_loss_mae} and {total_loss}"
+            )
 
-  # clear memory of deformation field
-  del deformation_field
 
-  return (optimized_deformation_field_lst, loss_lst)
+        # delete unused warped image to save memeory
+        del warped_image_tensor
+
+    # Save deformation field
+    deformation_field_detached = deformation_field.detach()
+    optimized_deformation_field_lst = [deformation_field_detached]
+    # clear memory of deformation field
+    del deformation_field
+
+    return (optimized_deformation_field_lst, loss_lst)
 
 """function that saves the warped images for the list of deformation fields in the folder path"""
 
 def generate_and_save_warped_images( fixed_img_path, moving_img_path, fixed_img_tnsr, moving_img_tnsr, optimized_deformation_field_lst, data_path_warped=data_path_warped):
-  fixed_image_name = os.path.basename(fixed_img_path).replace('.nii.gz', '')
-  moving_image_name = os.path.basename(moving_img_path).replace('.nii.gz', '')
-  warped_image_name = fixed_image_name + "|" + moving_image_name
-  counter = 1
-  for deformation_field in optimized_deformation_field_lst:
-    pos_flow = resize(deformation_field)
-    integrated_pos_flow = integrate(pos_flow)
-    full_flow = fullsize(integrated_pos_flow)
-    warped_img_tnsr = spatial_transformer_deformable(moving_img_tnsr, full_flow)
-    warped_img_np = warped_img_tnsr.to("cpu").numpy()
-    warped_img_nb = nb.Nifti1Image(warped_img_np[0,0,:,:,:], np.eye(4))
-    nb.save(warped_img_nb, os.path.join(data_path_warped , warped_image_name + "_" + str(counter) + ".nii.gz"))
-    counter = counter + 1
-  
-  return
+    fixed_image_name = os.path.basename(fixed_img_path).replace('.nii.gz', '')
+    moving_image_name = os.path.basename(moving_img_path).replace('.nii.gz', '')
+    warped_image_name = f"{fixed_image_name}|{moving_image_name}"
+    counter = 1
+    for deformation_field in optimized_deformation_field_lst:
+        pos_flow = resize(deformation_field)
+        integrated_pos_flow = integrate(pos_flow)
+        full_flow = fullsize(integrated_pos_flow)
+        warped_img_tnsr = spatial_transformer_deformable(moving_img_tnsr, full_flow)
+        warped_img_np = warped_img_tnsr.to("cpu").numpy()
+        warped_img_nb = nb.Nifti1Image(warped_img_np[0,0,:,:,:], np.eye(4))
+        nb.save(
+            warped_img_nb,
+            os.path.join(
+                data_path_warped, f"{warped_image_name}_{str(counter)}.nii.gz"
+            ),
+        )
+
+        counter = counter + 1
+
+    return
 
 """function that does below stuff
 - takes list of fixed images, moving images and deformation fields
@@ -557,33 +550,36 @@ def generate_and_save_warped_images( fixed_img_path, moving_img_path, fixed_img_
 def direct_optimization_training(deformation_field_tnsr_lst = deformation_field_tnsr_lst, fixed_img_tnsr_lst = fixed_img_tnsr_lst,
                                  moving_img_tnsr_lst = moving_img_tnsr_lst, optimizer = optimizer_dict['optimizer_adam'], 
                                  decay=scheduler_lst, epochs = 1001, decay_flag=False):
-  losses_dict = {}
-  counter = 0
-  for fixed_img_path, moving_img_path, fixed_img_tnsr, moving_img_tnsr, deformation_field in zip(data_path_lst_fixed, data_path_lst_moving,fixed_img_tnsr_lst, moving_img_tnsr_lst, deformation_field_tnsr_lst):
-    fixed_image_name = os.path.basename(fixed_img_path).replace(".nii.gz", "")
-    moving_image_name = os.path.basename(moving_img_path).replace(".nii.gz", "")
-    warped_image_name = fixed_image_name + "|" + moving_image_name
+    losses_dict = {}
+    counter = 0
+    for fixed_img_path, moving_img_path, fixed_img_tnsr, moving_img_tnsr, deformation_field in zip(data_path_lst_fixed, data_path_lst_moving,fixed_img_tnsr_lst, moving_img_tnsr_lst, deformation_field_tnsr_lst):
+        fixed_image_name = os.path.basename(fixed_img_path).replace(".nii.gz", "")
+        moving_image_name = os.path.basename(moving_img_path).replace(".nii.gz", "")
+        warped_image_name = f"{fixed_image_name}|{moving_image_name}"
 
-    print("Optimizing {} image pair for {}, {}".format(counter, fixed_image_name, moving_image_name ))
+        print(
+            f"Optimizing {counter} image pair for {fixed_image_name}, {moving_image_name}"
+        )
 
-    # obtain a list of deformation field at multiple of 500 epochs and also losses list at every multiple of 100th epoch
-    optimized_deformation_field_lst, loss_lst = optimize_one_image_pair(fixed_img_tnsr, moving_img_tnsr, deformation_field, 
-                                                                        optimizer = optimizer[counter], scheduler = scheduler_lst[counter], 
-                                                                        epochs=epochs, decay_flag=decay_flag)
-    
-    # saving the warped images for specific epoch deformation fields in the folder path
-    generate_and_save_warped_images(fixed_img_path, moving_img_path, fixed_img_tnsr, moving_img_tnsr, optimized_deformation_field_lst)
 
-    losses_dict[warped_image_name] = loss_lst
-    print("")
-    print(" ============ ================== ============== =============== ============ ================ ================ ")
-    print("")
-    
-    counter = counter + 1
+        # obtain a list of deformation field at multiple of 500 epochs and also losses list at every multiple of 100th epoch
+        optimized_deformation_field_lst, loss_lst = optimize_one_image_pair(fixed_img_tnsr, moving_img_tnsr, deformation_field, 
+                                                                            optimizer = optimizer[counter], scheduler = scheduler_lst[counter], 
+                                                                            epochs=epochs, decay_flag=decay_flag)
 
-    del optimized_deformation_field_lst
-  
-  return losses_dict
+        # saving the warped images for specific epoch deformation fields in the folder path
+        generate_and_save_warped_images(fixed_img_path, moving_img_path, fixed_img_tnsr, moving_img_tnsr, optimized_deformation_field_lst)
+
+        losses_dict[warped_image_name] = loss_lst
+        print("")
+        print(" ============ ================== ============== =============== ============ ================ ================ ")
+        print("")
+
+        counter = counter + 1
+
+        del optimized_deformation_field_lst
+
+    return losses_dict
 
 losses_dict = direct_optimization_training(deformation_field_tnsr_lst = deformation_field_tnsr_lst, fixed_img_tnsr_lst = fixed_img_tnsr_lst,
                                  moving_img_tnsr_lst = moving_img_tnsr_lst, optimizer = optimizer_dict['optimizer_rmsprop'], epochs = 1001)

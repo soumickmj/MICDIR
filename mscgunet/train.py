@@ -11,11 +11,11 @@ import argparse
 
 
 def fullmodel_one_epoch_run(epoch=1):
-    example_number = 0
     cc_loss_lst = []
     smoothness_loss_lst = []
     scg_loss_lst = []
     total_loss_lst = []
+    example_number = 0
     # antifold_loss_lst = []
     for X, Y in training_generator:
         X = X.float().to("cuda")
@@ -153,7 +153,7 @@ def fullmodel_one_epoch_run(epoch=1):
         example_number = example_number + 1
 
     if (epoch % 5 == 0):
-        modelname = model_dir + '/' + "scgnet_upsampling_concat_deconv_new_" + str(epoch) + '.pth'
+        modelname = f'{model_dir}/scgnet_upsampling_concat_deconv_new_{str(epoch)}.pth'
         torch.save({"feature_extractor_training": feature_extractor_training.state_dict(),
                     "scg_training": scg_training.state_dict(),
                     "upsampler1_training": upsampler1_training.state_dict(),
@@ -170,25 +170,29 @@ def fullmodel_one_epoch_run(epoch=1):
                     "conv_decoder5_training": conv_decoder5_training.state_dict(),
                     "conv_decoder6_training": conv_decoder6_training.state_dict()}, modelname)
 
-        print("epoch: {}".format(epoch + 0))
-        print("Losses: {}, {}  and {}".format(cc_loss * hyperparam1, hyperparam3 * sm_loss, total_loss))
-        print("Average Losses: {}, {} ,{}, {}".format(sum(cc_loss_lst) / len(cc_loss_lst),
-                                                      sum(abs(x) for x in smoothness_loss_lst) / len(
-                                                          smoothness_loss_lst),
-                                                      sum(abs(x) for x in scg_loss_lst) / len(scg_loss_lst),
-                                                      sum(total_loss_lst) / len(total_loss_lst)))
+        print(f"epoch: {epoch + 0}")
+        print(
+            f"Losses: {cc_loss * hyperparam1}, {hyperparam3 * sm_loss}  and {total_loss}"
+        )
+
+        print(
+            f"Average Losses: {sum(cc_loss_lst) / len(cc_loss_lst)}, {sum(abs(x) for x in smoothness_loss_lst) / len(smoothness_loss_lst)} ,{sum(abs(x) for x in scg_loss_lst) / len(scg_loss_lst)}, {sum(total_loss_lst) / len(total_loss_lst)}"
+        )
+
         print("Saving model checkpoints")
         print("======= =============== ===========")
         print()
 
     elif (epoch % 2 == 0):
-        print("epoch: {}".format(epoch))
-        print("Losses: {}, {}  and {}".format(cc_loss * hyperparam1, hyperparam3 * sm_loss, total_loss))
-        print("Average Losses: {}, {} ,{}, {}".format(sum(cc_loss_lst) / len(cc_loss_lst),
-                                                      sum(abs(x) for x in smoothness_loss_lst) / len(
-                                                          smoothness_loss_lst),
-                                                      sum(abs(x) for x in scg_loss_lst) / len(scg_loss_lst),
-                                                      sum(total_loss_lst) / len(total_loss_lst)))
+        print(f"epoch: {epoch}")
+        print(
+            f"Losses: {cc_loss * hyperparam1}, {hyperparam3 * sm_loss}  and {total_loss}"
+        )
+
+        print(
+            f"Average Losses: {sum(cc_loss_lst) / len(cc_loss_lst)}, {sum(abs(x) for x in smoothness_loss_lst) / len(smoothness_loss_lst)} ,{sum(abs(x) for x in scg_loss_lst) / len(scg_loss_lst)}, {sum(total_loss_lst) / len(total_loss_lst)}"
+        )
+
         print("======= =============== ===========")
 
     return cc_loss_lst, smoothness_loss_lst, scg_loss_lst
@@ -266,8 +270,8 @@ if __name__ == "__main__":
     # vector integrion to enforce diffeomorphic transform
     dim = 3
     int_downsize = 2
-    down_shape = [int(dim / int_downsize) for dim in (128, 128, 128)]
-    down_shape_64 = [int(dim / int_downsize) for dim in (64, 64, 64)]
+    down_shape = [dim // int_downsize for dim in (128, 128, 128)]
+    down_shape_64 = [dim // int_downsize for dim in (64, 64, 64)]
     resize = ResizeTransform(2, 3).to("cuda")
     fullsize = ResizeTransform(0.5, 3).to("cuda")
     integrate = VecInt(down_shape, 7).to("cuda")
@@ -310,4 +314,4 @@ if __name__ == "__main__":
             b.append(n)
             c.append(o)
         end_time = time.time()
-        print("Total time taken: {} minutes".format((end_time - start_time) / 60.0))
+        print(f"Total time taken: {(end_time - start_time) / 60.0} minutes")
